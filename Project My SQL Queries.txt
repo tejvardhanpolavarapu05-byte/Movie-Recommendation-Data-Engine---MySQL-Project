@@ -1,0 +1,678 @@
+
+-- ==========================================
+-- MOVIE RECOMMENDATION DATA ENGINE
+-- MySQL 8.0+
+-- ==========================================
+
+DROP DATABASE IF EXISTS movie_engine;
+CREATE DATABASE movie_engine
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
+
+USE movie_engine;
+
+-- 1. USERS TABLE
+CREATE TABLE users (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_name VARCHAR(100) NOT NULL,
+    favorite_genre_id INT
+);
+
+-- 2. GENRES TABLE
+CREATE TABLE genres (
+    genre_id INT AUTO_INCREMENT PRIMARY KEY,
+    genre_name VARCHAR(50) NOT NULL UNIQUE
+);
+
+-- 3. MOVIES TABLE
+CREATE TABLE movies (
+    movie_id INT AUTO_INCREMENT PRIMARY KEY,
+    movie_title VARCHAR(150) NOT NULL,
+    genre_id INT NOT NULL,
+    release_year YEAR NOT NULL,
+    FOREIGN KEY (genre_id)
+        REFERENCES genres(genre_id)
+);
+
+-- 4. ADD USER-GENRE RELATIONSHIP
+ALTER TABLE users
+ADD CONSTRAINT fk_users_favorite_genre
+FOREIGN KEY (favorite_genre_id)
+REFERENCES genres(genre_id)
+ON DELETE SET NULL;
+
+-- 5. RATINGS TABLE
+CREATE TABLE ratings (
+    rating_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    movie_id INT NOT NULL,
+    rating DECIMAL(2,1) NOT NULL,
+    rated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_rating_range
+        CHECK (rating >= 1.0 AND rating <= 5.0),
+
+    CONSTRAINT uq_user_movie
+        UNIQUE (user_id, movie_id),
+
+    FOREIGN KEY (user_id)
+        REFERENCES users(user_id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (movie_id)
+        REFERENCES movies(movie_id)
+        ON DELETE CASCADE
+);
+
+-- ==========================================
+-- INSERT GENRES FIRST
+-- ==========================================
+
+INSERT INTO genres (genre_name) VALUES
+('Action'),
+('Comedy'),
+('Drama'),
+('Sci-Fi'),
+('Romance'),
+('Thriller'),
+('Animation');
+
+-- VERIFY GENRES
+SELECT * FROM genres;
+
+-- ==========================================
+-- INSERT USERS
+-- ==========================================
+
+INSERT INTO users (user_name, favorite_genre_id) VALUES
+('Rahul', (SELECT genre_id FROM genres
+          WHERE genre_name = 'Action')),
+('Priya', (SELECT genre_id FROM genres
+           WHERE genre_name = 'Romance')),
+('Arjun', (SELECT genre_id FROM genres
+           WHERE genre_name = 'Sci-Fi')),
+('Sneha', (SELECT genre_id FROM genres
+           WHERE genre_name = 'Drama')),
+('Kiran', (SELECT genre_id FROM genres
+           WHERE genre_name = 'Comedy'));
+
+-- ==========================================
+-- INSERT MOVIES
+-- ==========================================
+
+INSERT INTO movies
+(movie_title, genre_id, release_year) VALUES
+('RRR', (SELECT genre_id FROM genres
+         WHERE genre_name = 'Action'), 2022),
+('Baahubali: The Beginning',
+ (SELECT genre_id FROM genres
+  WHERE genre_name = 'Action'), 2015),
+('Jathi Ratnalu', (SELECT genre_id FROM genres
+                   WHERE genre_name = 'Comedy'), 2021),
+('Interstellar', (SELECT genre_id FROM genres
+                  WHERE genre_name = 'Sci-Fi'), 2014),
+('The Martian', (SELECT genre_id FROM genres
+                 WHERE genre_name = 'Sci-Fi'), 2015),
+('Jersey', (SELECT genre_id FROM genres
+            WHERE genre_name = 'Drama'), 2019),
+('Arjun Reddy', (SELECT genre_id FROM genres
+                 WHERE genre_name = 'Drama'), 2017),
+('Hi Nanna', (SELECT genre_id FROM genres
+              WHERE genre_name = 'Romance'), 2023),
+('Sita Ramam', (SELECT genre_id FROM genres
+                WHERE genre_name = 'Romance'), 2022),
+('A Quiet Place', (SELECT genre_id FROM genres
+                   WHERE genre_name = 'Thriller'), 2018),
+('Toy Story', (SELECT genre_id FROM genres
+               WHERE genre_name = 'Animation'), 1995),
+('The Dark Knight', (SELECT genre_id FROM genres
+                     WHERE genre_name = 'Action'), 2008);
+
+-- ==========================================
+-- INSERT RATINGS
+-- ==========================================
+
+INSERT INTO ratings (user_id, movie_id, rating) VALUES
+((SELECT user_id FROM users WHERE user_name='Rahul'),
+ (SELECT movie_id FROM movies WHERE movie_title='RRR'), 5.0),
+
+((SELECT user_id FROM users WHERE user_name='Rahul'),
+ (SELECT movie_id FROM movies WHERE movie_title='Interstellar'), 4.0),
+
+((SELECT user_id FROM users WHERE user_name='Rahul'),
+ (SELECT movie_id FROM movies WHERE movie_title='Jathi Ratnalu'), 3.5),
+
+((SELECT user_id FROM users WHERE user_name='Priya'),
+ (SELECT movie_id FROM movies WHERE movie_title='Hi Nanna'), 5.0),
+
+((SELECT user_id FROM users WHERE user_name='Priya'),
+ (SELECT movie_id FROM movies WHERE movie_title='Sita Ramam'), 4.5),
+
+((SELECT user_id FROM users WHERE user_name='Priya'),
+ (SELECT movie_id FROM movies WHERE movie_title='Arjun Reddy'), 3.0),
+
+((SELECT user_id FROM users WHERE user_name='Arjun'),
+ (SELECT movie_id FROM movies WHERE movie_title='Interstellar'), 5.0),
+
+((SELECT user_id FROM users WHERE user_name='Arjun'),
+ (SELECT movie_id FROM movies WHERE movie_title='The Martian'), 4.5),
+
+((SELECT user_id FROM users WHERE user_name='Sneha'),
+ (SELECT movie_id FROM movies WHERE movie_title='Jersey'), 5.0),
+
+((SELECT user_id FROM users WHERE user_name='Sneha'),
+ (SELECT movie_id FROM movies WHERE movie_title='Arjun Reddy'), 4.0),
+
+((SELECT user_id FROM users WHERE user_name='Kiran'),
+ (SELECT movie_id FROM movies WHERE movie_title='Jathi Ratnalu'), 4.5),
+
+((SELECT user_id FROM users WHERE user_name='Kiran'),
+ (SELECT movie_id FROM movies WHERE movie_title='Toy Story'), 4.0),
+
+((SELECT user_id FROM users WHERE user_name='Rahul'),
+ (SELECT movie_id FROM movies WHERE movie_title='The Dark Knight'), 4.5),
+
+((SELECT user_id FROM users WHERE user_name='Arjun'),
+ (SELECT movie_id FROM movies WHERE movie_title='The Dark Knight'), 4.0);
+
+-- ==========================================
+-- VERIFY ALL TABLES
+-- ==========================================
+
+SELECT * FROM users;
+SELECT * FROM genres;
+SELECT * FROM movies;
+SELECT * FROM ratings;
+
+-- ==========================================
+-- QUERY 1: RECOMMEND MOVIES BY GENRE
+-- ==========================================
+
+SELECT u.user_name,
+       m.movie_title,
+       g.genre_name,
+       m.release_year
+FROM users u
+JOIN genres g
+    ON g.genre_id = u.favorite_genre_id
+JOIN movies m
+    ON m.genre_id = g.genre_id
+LEFT JOIN ratings r
+    ON r.user_id = u.user_id
+   AND r.movie_id = m.movie_id
+WHERE r.rating_id IS NULL
+ORDER BY u.user_name, m.movie_title;
+
+-- ==========================================
+-- QUERY 2: TOP-RATED MOVIES
+-- ==========================================
+
+SELECT m.movie_title,
+       ROUND(AVG(r.rating), 2) AS average_rating,
+       COUNT(*) AS total_ratings
+FROM movies m
+JOIN ratings r
+    ON r.movie_id = m.movie_id
+GROUP BY m.movie_id, m.movie_title
+HAVING COUNT(*) >= 2
+ORDER BY average_rating DESC,
+         total_ratings DESC;
+
+-- ==========================================
+-- QUERY 3: SIMILAR MOVIES BY GENRE
+-- ==========================================
+
+SELECT g.genre_name,
+       m1.movie_title AS movie_one,
+       m2.movie_title AS movie_two
+FROM movies m1
+JOIN movies m2
+    ON m1.genre_id = m2.genre_id
+   AND m1.movie_id < m2.movie_id
+JOIN genres g
+    ON g.genre_id = m1.genre_id
+ORDER BY g.genre_name, movie_one, movie_two;
+
+-- ==========================================
+-- QUERY 4: MOST POPULAR GENRE
+-- ==========================================
+
+WITH genre_counts AS (
+    SELECT g.genre_id,
+           g.genre_name,
+           COUNT(r.rating_id) AS total_ratings
+    FROM genres g
+    LEFT JOIN movies m
+        ON m.genre_id = g.genre_id
+    LEFT JOIN ratings r
+        ON r.movie_id = m.movie_id
+    GROUP BY g.genre_id, g.genre_name
+)
+SELECT genre_name, total_ratings
+FROM genre_counts
+WHERE total_ratings = (
+    SELECT MAX(total_ratings)
+    FROM genre_counts
+)
+ORDER BY genre_name;
+
+-- ==========================================
+-- QUERY 5: USER RATING ANALYSIS
+-- ==========================================
+
+SELECT u.user_name,
+       ROUND(AVG(r.rating), 2) AS average_rating,
+       COUNT(r.rating_id) AS movies_rated
+FROM users u
+LEFT JOIN ratings r
+    ON r.user_id = u.user_id
+GROUP BY u.user_id, u.user_name
+ORDER BY movies_rated DESC, u.user_name;
+
+-- ==========================================
+-- QUERY 6: MOVIES WITH RATINGS >= 4
+-- ==========================================
+
+SELECT DISTINCT m.movie_title,
+       g.genre_name,
+       m.release_year
+FROM movies m
+JOIN genres g
+    ON g.genre_id = m.genre_id
+JOIN ratings r
+    ON r.movie_id = m.movie_id
+WHERE r.rating >= 4.0
+ORDER BY m.movie_title;
+
+-- ==========================================
+-- QUERY 7: MOVIES RAHUL HAS NOT RATED
+-- ==========================================
+
+SELECT m.movie_title,
+       g.genre_name,
+       m.release_year
+FROM movies m
+JOIN genres g
+    ON g.genre_id = m.genre_id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM ratings r
+    JOIN users u
+        ON u.user_id = r.user_id
+    WHERE u.user_name = 'Rahul'
+      AND r.movie_id = m.movie_id
+)
+ORDER BY m.movie_title;
+
+-- ==========================================
+-- QUERY 8: GENRE-WISE ANALYSIS
+-- ==========================================
+
+SELECT g.genre_name,
+       COUNT(DISTINCT m.movie_id) AS movie_count,
+       ROUND(AVG(r.rating), 2) AS average_rating
+FROM genres g
+LEFT JOIN movies m
+    ON m.genre_id = g.genre_id
+LEFT JOIN ratings r
+    ON r.movie_id = m.movie_id
+GROUP BY g.genre_id, g.genre_name
+ORDER BY movie_count DESC, g.genre_name;
+
+-- ==========================================
+-- QUERY 9: TOP 3 MOVIES
+-- ==========================================
+
+SELECT m.movie_title,
+       ROUND(AVG(r.rating), 2) AS average_rating,
+       COUNT(r.rating_id) AS total_ratings
+FROM movies m
+JOIN ratings r
+    ON r.movie_id = m.movie_id
+GROUP BY m.movie_id, m.movie_title
+ORDER BY average_rating DESC,
+         total_ratings DESC,
+         m.movie_title
+LIMIT 3;
+
+-- ==========================================
+-- QUERY 10: COMPLETE RATINGS REPORT
+-- ==========================================
+
+SELECT u.user_name,
+       m.movie_title,
+       r.rating,
+       r.rated_at
+FROM ratings r
+JOIN users u
+    ON u.user_id = r.user_id
+JOIN movies m
+    ON m.movie_id = r.movie_id
+ORDER BY u.user_name, m.movie_title;
+
+
+
+
+
+
+
+
+
+## Problem 1: Display all movies with their genres
+
+Problem statement: Retrieve every movie's title, genre, and release year.
+
+SQL query
+
+```
+
+USE movie_engine;
+
+SELECT m.movie_title,
+       g.genre_name,
+       m.release_year
+FROM movies m
+JOIN genres g
+    ON m.genre_id = g.genre_id
+ORDER BY m.movie_id;
+
+```
+
+Expected output
+
+| movie_title              | genre_name | release_year |
+| ------------------------ | ---------- | ------------ |
+| RRR                      | Action     | 2022         |
+| Baahubali: The Beginning | Action     | 2015         |
+| Jathi Ratnalu            | Comedy     | 2021         |
+| Interstellar             | Sci-Fi     | 2014         |
+| The Martian              | Sci-Fi     | 2015         |
+| Jersey                   | Drama      | 2019         |
+| Arjun Reddy              | Drama      | 2017         |
+| Hi Nanna                 | Romance    | 2023         |
+| Sita Ramam               | Romance    | 2022         |
+| A Quiet Place            | Thriller   | 2018         |
+| Toy Story                | Animation  | 1995         |
+| The Dark Knight          | Action     | 2008         |
+
+## Problem 2: Find movies released after 2020
+
+Problem statement: Display all movies released after the year 2020.
+
+SQL query
+
+```
+
+SELECT movie_title, release_year
+FROM movies
+WHERE release_year > 2020
+ORDER BY release_year;
+
+```
+
+Expected output
+
+| movie_title   | release_year |
+| ------------- | ------------ |
+| RRR           | 2022         |
+| Jathi Ratnalu | 2021         |
+| Sita Ramam    | 2022         |
+| Hi Nanna      | 2023         |
+
+## Problem 3: Find the average rating of every movie
+
+Problem statement: Calculate each movie's average rating and display only movies with at least two ratings.
+
+SQL query
+
+```
+
+SELECT m.movie_title,
+       ROUND(AVG(r.rating), 2) AS average_rating,
+       COUNT(r.rating_id) AS total_ratings
+FROM movies m
+JOIN ratings r
+    ON m.movie_id = r.movie_id
+GROUP BY m.movie_id, m.movie_title
+HAVING COUNT(r.rating_id) >= 2
+ORDER BY average_rating DESC, m.movie_title;
+
+```
+
+Expected output
+
+| movie_title     | average_rating | total_ratings |
+| --------------- | -------------- | ------------- |
+| Interstellar    | 4.50           | 2             |
+| The Dark Knight | 4.25           | 2             |
+| Jathi Ratnalu   | 4.00           | 2             |
+| Arjun Reddy     | 3.50           | 2             |
+
+## Problem 4: Find the highest-rated movie
+
+Problem statement: Find the movie or movies with the highest average user rating.
+
+SQL query
+
+```
+
+SELECT m.movie_title,
+       ROUND(AVG(r.rating), 2) AS average_rating
+FROM movies m
+JOIN ratings r
+    ON m.movie_id = r.movie_id
+GROUP BY m.movie_id, m.movie_title
+HAVING AVG(r.rating) = (
+    SELECT MAX(avg_rating)
+    FROM (
+        SELECT AVG(rating) AS avg_rating
+        FROM ratings
+        GROUP BY movie_id
+    ) AS movie_averages
+);
+
+```
+
+Expected output
+
+| movie_title | average_rating |
+| ----------- | -------------- |
+| Hi Nanna    | 5.00           |
+| Jersey      | 5.00           |
+| RRR         | 5.00           |
+
+## Problem 5: Recommend movies based on users' favorite genres
+
+Problem statement: Recommend movies matching each user's favorite genre, excluding movies that user has already rated.
+
+SQL query
+
+```
+
+SELECT u.user_name,
+       m.movie_title,
+       g.genre_name
+FROM users u
+JOIN genres g
+    ON g.genre_id = u.favorite_genre_id
+JOIN movies m
+    ON m.genre_id = g.genre_id
+LEFT JOIN ratings r
+    ON r.user_id = u.user_id
+   AND r.movie_id = m.movie_id
+WHERE r.rating_id IS NULL
+ORDER BY u.user_id, m.movie_id;
+
+```
+
+Expected output
+
+| user_name | movie_title              | genre_name |
+| --------- | ------------------------ | ---------- |
+| Rahul     | Baahubali: The Beginning | Action     |
+| Priya     | Hi Nanna                 | Romance    |
+| Priya     | Sita Ramam               | Romance    |
+| Arjun     | The Martian              | Sci-Fi     |
+| Sneha     | Arjun Reddy              | Drama      |
+| Sneha     | Jersey                   | Drama      |
+| Kiran     | Jathi Ratnalu            | Comedy     |
+
+## Problem 6: Count the movies in each genre
+
+Problem statement: Display every genre and the number of movies belonging to it, including genres with zero ratings or movies if applicable.
+
+SQL query
+
+```
+
+SELECT g.genre_name,
+       COUNT(m.movie_id) AS total_movies
+FROM genres g
+LEFT JOIN movies m
+    ON g.genre_id = m.genre_id
+GROUP BY g.genre_id, g.genre_name
+ORDER BY total_movies DESC, g.genre_name;
+
+```
+
+Expected output
+
+| genre_name | total_movies |
+| ---------- | ------------ |
+| Action     | 3            |
+| Drama      | 2            |
+| Romance    | 2            |
+| Sci-Fi     | 2            |
+| Animation  | 1            |
+| Comedy     | 1            |
+| Thriller   | 1            |
+
+## Problem 7: Find users who have rated more than one movie
+
+Problem statement: Display users who have submitted ratings for at least two movies.
+
+SQL query
+
+```
+
+SELECT u.user_name,
+       COUNT(r.rating_id) AS movies_rated
+FROM users u
+JOIN ratings r
+    ON u.user_id = r.user_id
+GROUP BY u.user_id, u.user_name
+HAVING COUNT(r.rating_id) > 1
+ORDER BY movies_rated DESC, u.user_name;
+
+```
+
+Expected output
+
+| user_name | movies_rated |
+| --------- | ------------ |
+| Arjun     | 3            |
+| Rahul     | 4            |
+| Priya     | 3            |
+| Sneha     | 2            |
+| Kiran     | 2            |
+
+## Problem 8: Find the most popular genre by ratings
+
+Problem statement: Find the genre that has received the greatest total number of user ratings across its movies.
+
+SQL query
+
+```
+
+SELECT g.genre_name,
+       COUNT(r.rating_id) AS total_ratings
+FROM genres g
+JOIN movies m
+    ON g.genre_id = m.genre_id
+JOIN ratings r
+    ON m.movie_id = r.movie_id
+GROUP BY g.genre_id, g.genre_name
+ORDER BY total_ratings DESC, g.genre_name
+LIMIT 1;
+
+```
+
+Expected output
+
+| genre_name | total_ratings |
+| ---------- | ------------- |
+| Action     | 4             |
+
+## Problem 9: Display the top 3 movies by average rating
+
+Problem statement: Retrieve the three highest-rated movies based on average rating, with movie title used to break ties.
+
+SQL query
+
+```
+
+SELECT m.movie_title,
+       ROUND(AVG(r.rating), 2) AS average_rating,
+       COUNT(r.rating_id) AS total_ratings
+FROM movies m
+JOIN ratings r
+    ON m.movie_id = r.movie_id
+GROUP BY m.movie_id, m.movie_title
+ORDER BY average_rating DESC,
+         total_ratings DESC,
+         m.movie_title
+LIMIT 3;
+
+```
+
+Expected output
+
+| movie_title | average_rating | total_ratings |
+| ----------- | -------------- | ------------- |
+| Hi Nanna    | 5.00           | 1             |
+| Jersey      | 5.00           | 1             |
+| RRR         | 5.00           | 1             |
+
+## Problem 10: Generate a complete user rating report
+
+Problem statement: Display the username, movie title, genre, rating, and release year for every submitted rating.
+
+SQL query
+
+```
+
+SELECT u.user_name,
+       m.movie_title,
+       g.genre_name,
+       r.rating,
+       m.release_year
+FROM ratings r
+JOIN users u
+    ON r.user_id = u.user_id
+JOIN movies m
+    ON r.movie_id = m.movie_id
+JOIN genres g
+    ON m.genre_id = g.genre_id
+ORDER BY u.user_name, m.movie_title;
+
+```
+
+Expected output — all 14 ratings
+
+| user_name | movie_title     | genre_name | rating | release_year |
+| --------- | --------------- | ---------- | ------ | ------------ |
+| Arjun     | Interstellar    | Sci-Fi     | 5.0    | 2014         |
+| Arjun     | The Dark Knight | Action     | 4.0    | 2008         |
+| Arjun     | The Martian     | Sci-Fi     | 4.5    | 2015         |
+| Kiran     | Jathi Ratnalu   | Comedy     | 4.5    | 2021         |
+| Kiran     | Toy Story       | Animation  | 4.0    | 1995         |
+| Priya     | Arjun Reddy     | Drama      | 3.0    | 2017         |
+| Priya     | Hi Nanna        | Romance    | 5.0    | 2023         |
+| Priya     | Sita Ramam      | Romance    | 4.5    | 2022         |
+| Rahul     | Interstellar    | Sci-Fi     | 4.0    | 2014         |
+| Rahul     | Jathi Ratnalu   | Comedy     | 3.5    | 2021         |
+| Rahul     | RRR             | Action     | 5.0    | 2022         |
+| Rahul     | The Dark Knight | Action     | 4.5    | 2008         |
+| Sneha     | Arjun Reddy     | Drama      | 4.0    | 2017         |
+| Sneha     | Jersey          | Drama      | 5.0    | 2019         |
+
